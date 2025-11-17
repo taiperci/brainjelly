@@ -10,22 +10,36 @@ if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
 
 
-class Config:
+class BaseConfig:
     """Base configuration for Brain Jelly."""
 
     SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
-    FLASK_ENV = os.getenv("FLASK_ENV", "development")
-    DEBUG = FLASK_ENV == "development"
+    TESTING = False
+    DEBUG = False
 
-    # Database settings (placeholder)
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL", "sqlite:///brainjelly.db"
-    )
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Celery / Redis settings (placeholder)
-    CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    CELERY_RESULT_BACKEND = os.getenv(
-        "CELERY_RESULT_BACKEND", "redis://localhost:6379/0"
-    )
+class DevelopmentConfig(BaseConfig):
+    """Development configuration."""
+
+    DEBUG = True
+
+
+class ProductionConfig(BaseConfig):
+    """Production configuration."""
+
+    DEBUG = False
+
+
+CONFIG_MAP = {
+    "development": DevelopmentConfig,
+    "production": ProductionConfig,
+    "default": DevelopmentConfig,
+}
+
+
+def get_config(env_name: str | None) -> type[BaseConfig]:
+    """Return the config class associated with the given environment."""
+    if env_name is None:
+        return CONFIG_MAP["default"]
+    return CONFIG_MAP.get(env_name, CONFIG_MAP["default"])
 

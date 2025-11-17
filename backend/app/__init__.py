@@ -1,12 +1,18 @@
-from flask import Flask
+import os
+
+from flask import Flask, jsonify
+
+from backend.config import get_config
 
 
-def create_app(config_object: str = "backend.config.Config") -> Flask:
+def create_app(env_name: str | None = None) -> Flask:
     """Application factory for the Brain Jelly backend."""
     app = Flask(__name__)
-    app.config.from_object(config_object)
+    config_class = get_config(env_name or os.getenv("FLASK_ENV"))
+    app.config.from_object(config_class)
 
     _register_blueprints(app)
+    _register_error_handlers(app)
     _register_extensions(app)
     _register_cli(app)
 
@@ -18,6 +24,18 @@ def _register_blueprints(app: Flask) -> None:
     from .routes import register_routes  # local import to avoid circular deps
 
     register_routes(app)
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Register global JSON error handlers."""
+
+    @app.errorhandler(404)
+    def handle_404(error):
+        return jsonify({"error": "Not Found"}), 404
+
+    @app.errorhandler(500)
+    def handle_500(error):
+        return jsonify({"error": "Internal Server Error"}), 500
 
 
 def _register_extensions(app: Flask) -> None:
