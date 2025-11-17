@@ -12,10 +12,9 @@ def create_celery_app(app: Flask) -> Celery:
     # Load config from Flask app
     celery.conf.update(app.config)
 
-    # Set default Redis URL if REDIS_URL is not provided
-    if not app.config.get("REDIS_URL"):
-        celery.conf.broker_url = "redis://localhost:6379/0"
-        celery.conf.result_backend = "redis://localhost:6379/0"
+    # Explicitly map Redis broker and backend from config
+    celery.conf.broker_url = app.config.get("CELERY_BROKER_URL") or "redis://localhost:6379/0"
+    celery.conf.result_backend = app.config.get("CELERY_RESULT_BACKEND") or "redis://localhost:6379/0"
 
     # Auto-discover tasks from backend/app/tasks
     celery.autodiscover_tasks(["backend.app.tasks"])
