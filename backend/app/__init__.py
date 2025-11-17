@@ -21,9 +21,16 @@ def create_app(env_name: str | None = None) -> Flask:
 
 def _register_blueprints(app: Flask) -> None:
     """Import and register Flask blueprints."""
-    from .routes import register_routes  # local import to avoid circular deps
+    from .routes import register_root_routes  # local import to avoid circular deps
+    from .routes.api import api_bp
+    from .routes.upload import upload_bp
+    from .routes.tracks import tracks_bp
 
-    register_routes(app)
+    app.register_blueprint(api_bp, url_prefix="/api")
+    app.register_blueprint(upload_bp, url_prefix="/api")
+    app.register_blueprint(tracks_bp, url_prefix="/api")
+
+    register_root_routes(app)
 
 
 def _register_error_handlers(app: Flask) -> None:
@@ -31,11 +38,11 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(404)
     def handle_404(error):
-        return jsonify({"error": "Not Found"}), 404
+        return jsonify({"success": False, "error": "Not Found"}), 404
 
     @app.errorhandler(500)
     def handle_500(error):
-        return jsonify({"error": "Internal Server Error"}), 500
+        return jsonify({"success": False, "error": "Internal Server Error"}), 500
 
 
 def _register_extensions(app: Flask) -> None:

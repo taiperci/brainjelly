@@ -1,16 +1,13 @@
-"""Route registration for Brain Jelly."""
+"""Route registration helpers for Brain Jelly."""
 
 from flask import Flask, jsonify
 
-from .api import api_bp
 
-
-def register_routes(app: Flask) -> None:
-    """Register application blueprints and root routes."""
-    app.register_blueprint(api_bp, url_prefix="/api")
+def register_root_routes(app: Flask) -> None:
+    """Register routes that live on the root domain."""
 
     @app.get("/")
     def root():
         """Entry point for the API."""
-        return jsonify({"message": "Welcome to the Brain Jelly API"})
+        return jsonify({"success": True, "data": {"message": "Welcome to the Brain Jelly API"}})
 
