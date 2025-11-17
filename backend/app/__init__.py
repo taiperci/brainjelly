@@ -47,8 +47,10 @@ def _register_error_handlers(app: Flask) -> None:
 
 def _register_extensions(app: Flask) -> None:
     """Initialize Flask extensions."""
-    # Placeholder for extension initialization (e.g., db.init_app(app))
-    return None
+    from backend.celery_app import create_celery_app
+
+    # Initialize Celery
+    create_celery_app(app)
 
 
 def _register_cli(app: Flask) -> None:
