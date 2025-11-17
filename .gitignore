@@ -1,0 +1,39 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Flask instance / configs
+instance/
+*.db
+*.sqlite3
+
+# Tooling
+.mypy_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+dist/
+build/
+
+# IDEs / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+logs/
+*.log
+
+# Redis / Celery artifacts
+dump.rdb
+celerybeat-schedule
+celerybeat.pid
+
