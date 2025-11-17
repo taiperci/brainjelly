@@ -2,6 +2,8 @@
 
 from flask import Blueprint, jsonify
 
+from backend.app.state import UPLOAD_STATE
+
 tracks_bp = Blueprint("tracks", __name__)
 
 PLACEHOLDER_TRACKS = [
@@ -18,7 +20,14 @@ def list_tracks():
 
 @tracks_bp.get("/tracks/<track_id>")
 def get_track(track_id: str):
-    """Return a specific placeholder track."""
+    """Return a specific track, checking UPLOAD_STATE first."""
+    # Check UPLOAD_STATE first
+    if track_id in UPLOAD_STATE:
+        track_data = UPLOAD_STATE[track_id].copy()
+        track_data["track_id"] = track_id
+        return jsonify({"success": True, "data": track_data})
+    
+    # Fall back to placeholder data
     track = next((item for item in PLACEHOLDER_TRACKS if item["id"] == track_id), None)
     if track is None:
         return jsonify({"success": False, "error": "Track not found"}), 404

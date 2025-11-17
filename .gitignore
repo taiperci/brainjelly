@@ -37,3 +37,6 @@ dump.rdb
 celerybeat-schedule
 celerybeat.pid
 
+# Uploads
+backend/uploads/*
+
