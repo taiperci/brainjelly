@@ -11,8 +11,8 @@ from backend.app.tasks.tasks import process_audio
 upload_bp = Blueprint("upload", __name__)
 
 # Upload directory
-UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @upload_bp.post("/upload")
