@@ -23,10 +23,12 @@ def _register_blueprints(app: Flask) -> None:
     """Import and register Flask blueprints."""
     from .routes import register_root_routes  # local import to avoid circular deps
     from .routes.api import api_bp
+    from .routes.health import health_bp
     from .routes.upload import upload_bp
     from .routes.tracks import tracks_bp
 
     app.register_blueprint(api_bp, url_prefix="/api")
+    app.register_blueprint(health_bp, url_prefix="/api")
     app.register_blueprint(upload_bp, url_prefix="/api")
     app.register_blueprint(tracks_bp, url_prefix="/api")
 

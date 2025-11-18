@@ -13,6 +13,12 @@ except ImportError:
     HAS_SOUNDFILE = False
 
 
+@celery.task(name="ping")
+def ping():
+    """Lightweight ping task for Celery health checks."""
+    return "pong"
+
+
 @celery.task
 def add(x: int, y: int) -> int:
     """Simple math task for testing Celery."""
