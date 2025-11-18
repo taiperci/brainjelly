@@ -52,7 +52,7 @@ def process_audio(self, track_id: str, file_path: str) -> dict:
                 duration=duration,
                 error_message=None,
             )
-            extract_features.delay(track_id)
+            extract_features.delay(track_id, file_path)
             db.session.commit()
             return track_data
         except AudioLoaderError as exc:
@@ -72,8 +72,29 @@ def process_audio(self, track_id: str, file_path: str) -> dict:
             db.session.remove()
 
 
+def basic_extraction(track_path):
+    """Extract basic audio features from a track file."""
+    waveform, samplerate = load_audio(track_path)
+
+    rms = float(np.sqrt(np.mean(waveform**2)))
+    spectral_centroid = float(np.mean(np.abs(np.fft.rfft(waveform))))
+    peak_amplitude = float(np.max(np.abs(waveform)))
+
+    mfcc = [0.0] * 13  # placeholder
+
+    return {
+        "spectral_centroid": spectral_centroid,
+        "rms": rms,
+        "peak_amplitude": peak_amplitude,
+        "mfcc": mfcc,
+        "bpm": None,
+        "key": None,
+        "key_strength": None,
+    }
+
+
 @celery.task(bind=True)
-def extract_features(self, track_id):
+def extract_features(self, track_id, track_path):
     from backend.app.models import Track, AudioFeature
 
     with current_app.app_context():
@@ -84,39 +105,35 @@ def extract_features(self, track_id):
             if not track:
                 return {"error": "Track not found"}
 
-            file_path = track.stored_path
             try:
-                waveform, samplerate = load_audio(file_path)
+                features = basic_extraction(track_path)
             except AudioLoaderError as exc:
                 track.status = "error"
                 track.error_message = str(exc)
                 session.commit()
                 return {"error": str(exc)}
 
-            rms = float(np.sqrt(np.mean(waveform**2)))
-            spectral_centroid = float(np.mean(np.abs(np.fft.rfft(waveform))))
-            peak_amplitude = float(np.max(np.abs(waveform)))
-
-            mfcc = [0.0] * 13  # placeholder
-
-            features = AudioFeature(
+            audio_feature = AudioFeature(
                 track_id=track_id,
-                rms=rms,
-                spectral_centroid=spectral_centroid,
-                peak_amplitude=peak_amplitude,
-                mfcc=mfcc,
+                rms=features["rms"],
+                spectral_centroid=features["spectral_centroid"],
+                peak_amplitude=features["peak_amplitude"],
+                mfcc=features["mfcc"],
+                bpm=features["bpm"],
+                key=features["key"],
+                key_strength=features["key_strength"],
             )
-            session.add(features)
+            session.add(audio_feature)
 
             track.status = "features_ready"
 
             response = {
-                "id": features.id,
-                "track_id": features.track_id,
-                "spectral_centroid": features.spectral_centroid,
-                "rms": features.rms,
-                "peak_amplitude": features.peak_amplitude,
-                "mfcc": features.mfcc,
+                "id": audio_feature.id,
+                "track_id": audio_feature.track_id,
+                "spectral_centroid": audio_feature.spectral_centroid,
+                "rms": audio_feature.rms,
+                "peak_amplitude": audio_feature.peak_amplitude,
+                "mfcc": audio_feature.mfcc,
             }
 
             session.commit()
