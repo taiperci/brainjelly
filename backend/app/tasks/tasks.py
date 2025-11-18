@@ -1,19 +1,21 @@
 """Celery tasks for Brain Jelly."""
 
-import audioread
-import numpy as np
+from __future__ import annotations
+
+import logging
 from pathlib import Path
 
+import numpy as np
+
+from backend.app.audio import (
+    AudioLoaderError,
+    load_audio,
+)
 from backend.app.extensions import db
 from backend.app.models import AudioFeature, Track
 from backend.celery_app import celery
 
-try:
-    import soundfile as sf
-
-    HAS_SOUNDFILE = True
-except ImportError:
-    HAS_SOUNDFILE = False
+logger = logging.getLogger(__name__)
 
 
 @celery.task(name="ping")
@@ -32,34 +34,29 @@ def add(x: int, y: int) -> int:
 def process_audio(track_id: str, file_path: str) -> dict:
     """Load audio file and extract basic metadata."""
     file_path_obj = Path(file_path)
-    samplerate = None
-    duration = None
-    
-    # First try soundfile
-    if HAS_SOUNDFILE:
-        try:
-            data, samplerate = sf.read(str(file_path_obj))
-            duration = len(data) / samplerate
-        except Exception as e:
-            # If soundfile fails, try audioread as fallback
-            try:
-                with audioread.audio_open(str(file_path_obj)) as audio:
-                    samplerate = audio.samplerate
-                    duration = audio.duration
-            except Exception as audioread_error:
-                return _handle_processing_error(track_id, audioread_error)
-    else:
-        # No soundfile available, use audioread
-        try:
-            with audioread.audio_open(str(file_path_obj)) as audio:
-                samplerate = audio.samplerate
-                duration = audio.duration
-        except Exception as e:
-            return _handle_processing_error(track_id, e)
-    
-    # Success - update state
-    print(f"Loaded file: {file_path}, samplerate={samplerate}, duration={duration:.2f}")
-    
+    try:
+        waveform, samplerate = load_audio(file_path_obj)
+        duration = waveform.size / float(samplerate)
+    except AudioLoaderError as exc:
+        logger.warning(
+            "process_audio failed to decode %s (%s): %s",
+            track_id,
+            file_path,
+            exc,
+        )
+        return _handle_processing_error(track_id, exc)
+    except Exception as exc:  # noqa: broad-except
+        logger.exception("Unexpected error decoding %s: %s", track_id, exc)
+        return _handle_processing_error(track_id, exc)
+
+    logger.info(
+        "Decoded track %s (%s): samplerate=%s, duration=%.2fs",
+        track_id,
+        file_path,
+        samplerate,
+        duration,
+    )
+
     track_data = _update_track_record(
         track_id,
         status="loaded",
@@ -83,7 +80,7 @@ def extract_features(track_id: str, file_path: str) -> dict:
     db.session.commit()
 
     try:
-        waveform, samplerate = _load_audio_waveform(file_path)
+        waveform, samplerate = load_audio(file_path)
         if waveform.size == 0:
             waveform = np.zeros(1, dtype=np.float32)
 
@@ -106,10 +103,20 @@ def extract_features(track_id: str, file_path: str) -> dict:
         track.error_message = None
         db.session.commit()
 
+        logger.info("Features ready for track %s", track_id)
         return features.to_dict()
-    except Exception as exc:
+    except AudioLoaderError as exc:
+        logger.warning(
+            "extract_features failed to decode %s (%s): %s",
+            track_id,
+            file_path,
+            exc,
+        )
         db.session.rollback()
-        print(f"Error extracting features for track {track_id}: {exc}")
+        return _set_track_error(track_id, str(exc))
+    except Exception as exc:  # noqa: broad-except
+        logger.exception("Error extracting features for %s: %s", track_id, exc)
+        db.session.rollback()
         return _set_track_error(track_id, str(exc))
 
 
@@ -144,7 +151,7 @@ def _update_track_record(
 
 def _handle_processing_error(track_id: str, exc: Exception) -> dict:
     """Handle processing failure by updating track status."""
-    print(f"Error processing audio for track {track_id}: {exc}")
+    logger.warning("Error processing audio for track %s: %s", track_id, exc)
     return _update_track_record(
         track_id,
         status="error",
@@ -162,34 +169,4 @@ def _set_track_error(track_id: str, message: str) -> dict:
         track.error_message = message
         db.session.commit()
     return {"status": "error", "message": message, "track_id": track_id}
-
-
-def _load_audio_waveform(file_path: str) -> tuple[np.ndarray, int]:
-    """Load audio data as a mono numpy array."""
-    last_error: Exception | None = None
-    if HAS_SOUNDFILE:
-        try:
-            data, samplerate = sf.read(file_path, always_2d=False)
-            data = np.asarray(data, dtype=np.float32)
-            if data.ndim > 1:
-                data = np.mean(data, axis=1)
-            return data, int(samplerate)
-        except Exception as exc:
-            last_error = exc
-
-    try:
-        with audioread.audio_open(file_path) as audio:
-            samplerate = audio.samplerate or 44100
-            buffers: list[np.ndarray] = []
-            for buf in audio:
-                np_buf = np.frombuffer(buf, dtype=np.int16).astype(np.float32)
-                if np_buf.size:
-                    buffers.append(np_buf / 32768.0)
-            if buffers:
-                data = np.concatenate(buffers)
-            else:
-                data = np.zeros(1, dtype=np.float32)
-            return data, int(samplerate)
-    except Exception as exc:
-        raise last_error or exc
 
