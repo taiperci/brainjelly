@@ -12,9 +12,9 @@ from backend.app.extensions import db
 from backend.app.models import AudioFeature, Track
 from backend.celery_app import celery
 from flask import current_app
+from sqlalchemy.orm import scoped_session, sessionmaker
 
 logger = logging.getLogger(__name__)
-
 
 @celery.task(name="ping")
 def ping():
@@ -28,42 +28,48 @@ def add(x: int, y: int) -> int:
     return x + y
 
 
-@celery.task
-def process_audio(track_id: str, file_path: str) -> dict:
+@celery.task(bind=True)
+def process_audio(self, track_id: str, file_path: str) -> dict:
     """Load audio file and extract basic metadata."""
-    file_path_obj = Path(file_path)
-    try:
-        waveform, samplerate = load_audio(file_path_obj)
-        duration = waveform.size / float(samplerate)
-    except AudioLoaderError as exc:
-        logger.warning(
-            "process_audio failed to decode %s (%s): %s",
-            track_id,
-            file_path,
-            exc,
-        )
-        return _handle_processing_error(track_id, exc)
-    except Exception as exc:  # noqa: broad-except
-        logger.exception("Unexpected error decoding %s: %s", track_id, exc)
-        return _handle_processing_error(track_id, exc)
+    with current_app.app_context():
+        try:
+            file_path_obj = Path(file_path)
+            waveform, samplerate = load_audio(file_path_obj)
+            duration = waveform.size / float(samplerate)
 
-    logger.info(
-        "Decoded track %s (%s): samplerate=%s, duration=%.2fs",
-        track_id,
-        file_path,
-        samplerate,
-        duration,
-    )
+            logger.info(
+                "Decoded track %s (%s): samplerate=%s, duration=%.2fs",
+                track_id,
+                file_path,
+                samplerate,
+                duration,
+            )
 
-    track_data = _update_track_record(
-        track_id,
-        status="loaded",
-        samplerate=int(samplerate) if samplerate is not None else None,
-        duration=duration,
-        error_message=None,
-    )
-    extract_features.delay(track_id)
-    return track_data
+            track_data = _update_track_record(
+                track_id,
+                status="loaded",
+                samplerate=int(samplerate) if samplerate is not None else None,
+                duration=duration,
+                error_message=None,
+            )
+            extract_features.delay(track_id)
+            db.session.commit()
+            return track_data
+        except AudioLoaderError as exc:
+            logger.warning(
+                "process_audio failed to decode %s (%s): %s",
+                track_id,
+                file_path,
+                exc,
+            )
+            db.session.rollback()
+            return _handle_processing_error(track_id, exc)
+        except Exception as exc:  # noqa: broad-except
+            logger.exception("Unexpected error decoding %s: %s", track_id, exc)
+            db.session.rollback()
+            raise
+        finally:
+            db.session.remove()
 
 
 @celery.task(bind=True)
@@ -71,40 +77,60 @@ def extract_features(self, track_id):
     from backend.app.models import Track, AudioFeature
 
     with current_app.app_context():
-        db.session.remove()
-
-        track = Track.query.get(track_id)
-        if not track:
-            return {"error": "Track not found"}
-
-        file_path = track.stored_path
+        Session = scoped_session(sessionmaker(bind=db.engine))
+        session = Session()
         try:
-            waveform, samplerate = load_audio(file_path)
-        except AudioLoaderError as exc:
-            track.status = "error"
-            track.error_message = str(exc)
-            db.session.commit()
-            return {"error": str(exc)}
+            track = session.query(Track).get(track_id)
+            if not track:
+                return {"error": "Track not found"}
 
-        rms = float(np.sqrt(np.mean(waveform**2)))
-        spectral_centroid = float(np.mean(np.abs(np.fft.rfft(waveform))))
-        peak_amplitude = float(np.max(np.abs(waveform)))
+            file_path = track.stored_path
+            try:
+                waveform, samplerate = load_audio(file_path)
+            except AudioLoaderError as exc:
+                track.status = "error"
+                track.error_message = str(exc)
+                session.commit()
+                return {"error": str(exc)}
 
-        mfcc = [0.0] * 13  # placeholder
+            rms = float(np.sqrt(np.mean(waveform**2)))
+            spectral_centroid = float(np.mean(np.abs(np.fft.rfft(waveform))))
+            peak_amplitude = float(np.max(np.abs(waveform)))
 
-        features = AudioFeature(
-            track_id=track_id,
-            rms=rms,
-            spectral_centroid=spectral_centroid,
-            peak_amplitude=peak_amplitude,
-            mfcc=mfcc,
-        )
-        db.session.add(features)
+            mfcc = [0.0] * 13  # placeholder
 
-        track.status = "features_ready"
-        db.session.commit()
+            features = AudioFeature(
+                track_id=track_id,
+                rms=rms,
+                spectral_centroid=spectral_centroid,
+                peak_amplitude=peak_amplitude,
+                mfcc=mfcc,
+            )
+            session.add(features)
 
-        return features.to_dict()
+            track.status = "features_ready"
+
+            response = {
+                "id": features.id,
+                "track_id": features.track_id,
+                "spectral_centroid": features.spectral_centroid,
+                "rms": features.rms,
+                "peak_amplitude": features.peak_amplitude,
+                "mfcc": features.mfcc,
+            }
+
+            session.commit()
+
+            # Trigger similarity generation for this track
+            compute_similarity_for_track.delay(track_id)
+
+            return response
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+            Session.remove()
 
 
 @celery.task(bind=True)
@@ -112,48 +138,77 @@ def compute_similarity_for_track(self, track_id):
     from backend.app.models import Track, AudioFeature, SimilarityScore
 
     with current_app.app_context():
-        db.session.remove()
+        Session = scoped_session(sessionmaker(bind=db.engine))
+        session = Session()
+        try:
+            source_track = session.query(Track).get(track_id)
+            if source_track is None:
+                return {"error": "missing source track"}
 
-        source_track = Track.query.get(track_id)
-        if not source_track:
-            return {"error": "Track not found"}
+            source_features = source_track.features
+            if source_features is None:
+                return {"error": "No features for source track"}
 
-        source_features = source_track.features
-        if not source_features:
-            return {"error": "No features for source track"}
+            source_values = _extract_basic_feature_values(source_features)
+            if source_values is None:
+                return {"error": "Incomplete source features"}
 
-        # Clear old scores
-        SimilarityScore.query.filter_by(source_track_id=track_id).delete()
+            # Clear old scores
+            session.query(SimilarityScore).filter_by(source_track_id=track_id).delete()
 
-        all_features = AudioFeature.query.all()
-        computed = 0
+            target_vectors = []
+            all_features = session.query(AudioFeature).all()
+            computed = 0
 
-        for target in all_features:
-            if target.track_id == track_id:
-                continue
+            for target in all_features:
+                if target.track_id == track_id:
+                    continue
 
-            dist = float(
-                (source_features.rms - target.rms) ** 2
-                + (
-                    source_features.spectral_centroid
-                    - target.spectral_centroid
+                target_values = _extract_basic_feature_values(target)
+                if target_values is None:
+                    continue
+
+                target_vectors.append(
+                    {
+                        "track_id": target.track_id,
+                        **target_values,
+                    }
                 )
-                ** 2
-                + (source_features.peak_amplitude - target.peak_amplitude) ** 2
-            )
 
-            score = SimilarityScore(
-                source_track_id=track_id,
-                target_track_id=target.track_id,
-                score=dist,
-            )
-            db.session.add(score)
-            computed += 1
+            for target in target_vectors:
+                dist = float(
+                    (source_values["rms"] - target["rms"]) ** 2
+                    + (
+                        source_values["spectral_centroid"]
+                        - target["spectral_centroid"]
+                    )
+                    ** 2
+                    + (
+                        source_values["peak_amplitude"]
+                        - target["peak_amplitude"]
+                    )
+                    ** 2
+                )
 
-        source_track.has_similarity = True
-        db.session.commit()
+                score = SimilarityScore(
+                    source_track_id=track_id,
+                    target_track_id=target["track_id"],
+                    score=dist,
+                )
+                session.add(score)
+                computed += 1
 
-        return {"computed": computed}
+            source_track.has_similarity = True
+            session.commit()
+
+            return {"computed": computed}
+        except Exception as exc:
+            session.rollback()
+            logger.exception("compute_similarity_for_track failed: %s", exc)
+            raise
+        finally:
+            session.close()
+            Session.remove()
 
 
 def _update_track_record(
@@ -260,4 +315,19 @@ def _calculate_distance(source: dict, target: dict) -> float:
         total += weights["mfcc"] * float(np.sum(diff**2))
 
     return float(np.sqrt(total))
+
+
+def _extract_basic_feature_values(feature: AudioFeature) -> dict | None:
+    if (
+        feature.rms is None
+        or feature.spectral_centroid is None
+        or feature.peak_amplitude is None
+    ):
+        return None
+
+    return {
+        "rms": float(feature.rms),
+        "spectral_centroid": float(feature.spectral_centroid),
+        "peak_amplitude": float(feature.peak_amplitude),
+    }
 

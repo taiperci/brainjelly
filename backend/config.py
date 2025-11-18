@@ -25,6 +25,11 @@ class BaseConfig:
     )
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "execution_options": {
+            "prepared_statement_cache_size": 0
+        }
+    }
 
     # Redis / Celery configuration
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
