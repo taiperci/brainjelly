@@ -36,3 +36,16 @@ def get_track(track_id: str):
         return jsonify({"success": False, "error": "Track not found"}), 404
     return jsonify({"success": True, "data": track.to_dict()})
 
+
+@tracks_bp.get("/tracks/<track_id>/features")
+def get_track_features(track_id: str):
+    """Return extracted features for a specific track."""
+    track = Track.query.get(track_id)
+    if track is None:
+        return jsonify({"success": False, "error": "Track not found"}), 404
+
+    if not track.features:
+        return jsonify({"success": False, "error": "No features available"}), 404
+
+    return jsonify({"success": True, "data": track.features.to_dict()})
+

@@ -17,6 +17,9 @@ class Track(db.Model):
     samplerate = db.Column(db.Integer, nullable=True)
     duration = db.Column(db.Float, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
+    features = db.relationship(
+        "AudioFeature", uselist=False, backref="track", cascade="all, delete-orphan"
+    )
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
