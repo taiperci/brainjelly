@@ -2,7 +2,7 @@
 
 from flask import Blueprint, jsonify
 
-from backend.app.models import Track
+from backend.app.models import SimilarityScore, Track
 
 tracks_bp = Blueprint("tracks", __name__)
 
@@ -48,4 +48,34 @@ def get_track_features(track_id: str):
         return jsonify({"success": False, "error": "No features available"}), 404
 
     return jsonify({"success": True, "data": track.features.to_dict()})
+
+
+@tracks_bp.get("/tracks/<track_id>/similar")
+def get_similar_tracks(track_id: str):
+    """Return the top 20 similar tracks for the given track."""
+    track = Track.query.get(track_id)
+    if track is None:
+        return jsonify({"success": False, "error": "Track not found"}), 404
+
+    scores = (
+        SimilarityScore.query.filter_by(source_track_id=track_id)
+        .join(Track, SimilarityScore.target_track_id == Track.id)
+        .order_by(SimilarityScore.score.desc())
+        .limit(20)
+        .all()
+    )
+
+    data = []
+    for score in scores:
+        target = score.target_track
+        data.append(
+            {
+                "target_track_id": score.target_track_id,
+                "score": score.score,
+                "original_filename": target.original_filename if target else None,
+                "duration": target.duration if target else None,
+            }
+        )
+
+    return jsonify({"success": True, "data": data})
 

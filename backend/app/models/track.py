@@ -17,8 +17,21 @@ class Track(db.Model):
     samplerate = db.Column(db.Integer, nullable=True)
     duration = db.Column(db.Float, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
+    has_similarity = db.Column(db.Boolean, default=False, nullable=False)
     features = db.relationship(
         "AudioFeature", uselist=False, backref="track", cascade="all, delete-orphan"
+    )
+    similarity_sources = db.relationship(
+        "SimilarityScore",
+        foreign_keys="SimilarityScore.source_track_id",
+        backref="source_track",
+        cascade="all, delete-orphan",
+    )
+    similarity_targets = db.relationship(
+        "SimilarityScore",
+        foreign_keys="SimilarityScore.target_track_id",
+        backref="target_track",
+        cascade="all, delete-orphan",
     )
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -37,6 +50,7 @@ class Track(db.Model):
             "error_message": self.error_message,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "has_similarity": bool(self.has_similarity),
         }
 
     def __repr__(self) -> str:
