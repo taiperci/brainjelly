@@ -14,6 +14,9 @@ class AudioFeature(db.Model):
     track_id = db.Column(
         db.String(64), db.ForeignKey("tracks.id"), unique=True, nullable=False
     )
+    bpm = db.Column(db.Float, nullable=True)
+    key = db.Column(db.String(32), nullable=True)
+    key_strength = db.Column(db.Float, nullable=True)
     spectral_centroid = db.Column(db.Float, nullable=True)
     rms = db.Column(db.Float, nullable=True)
     peak_amplitude = db.Column(db.Float, nullable=True)
