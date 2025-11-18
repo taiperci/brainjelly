@@ -20,8 +20,8 @@ def list_tracks():
 
 @tracks_bp.get("/tracks/<track_id>")
 def get_track(track_id: str):
-    """Return a specific track, checking UPLOAD_STATE first."""
-    # Check UPLOAD_STATE first
+    """Return a specific track, always checking UPLOAD_STATE first."""
+    # Always check UPLOAD_STATE first
     if track_id in UPLOAD_STATE:
         track_data = UPLOAD_STATE[track_id].copy()
         track_data["track_id"] = track_id
