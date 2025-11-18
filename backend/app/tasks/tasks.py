@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from backend.app.audio import AudioLoaderError, load_audio
+from backend.app.audio.essentia_extraction import ESSENTIA_AVAILABLE, essentia_extraction
 from backend.app.extensions import db
 from backend.app.models import AudioFeature, Track
 from backend.celery_app import celery
@@ -81,6 +82,9 @@ def basic_extraction(track_path):
     peak_amplitude = float(np.max(np.abs(waveform)))
 
     mfcc = [0.0] * 13  # placeholder
+
+    if ESSENTIA_AVAILABLE:
+        return essentia_extraction(track_path)
 
     return {
         "spectral_centroid": spectral_centroid,
