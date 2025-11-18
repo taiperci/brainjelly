@@ -2,34 +2,28 @@
 
 from flask import Blueprint, jsonify
 
-from backend.app.state import UPLOAD_STATE
+from backend.app.models import Track
 
 tracks_bp = Blueprint("tracks", __name__)
-
-PLACEHOLDER_TRACKS = [
-    {"id": "track-1", "title": "Placeholder Track 1", "status": "processing"},
-    {"id": "track-2", "title": "Placeholder Track 2", "status": "ready"},
-]
 
 
 @tracks_bp.get("/tracks")
 def list_tracks():
-    """Return all placeholder tracks."""
-    return jsonify({"success": True, "data": PLACEHOLDER_TRACKS})
+    """Return the latest uploaded tracks."""
+    tracks = (
+        Track.query.order_by(Track.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    data = [track.to_dict() for track in tracks]
+    return jsonify({"success": True, "data": data})
 
 
 @tracks_bp.get("/tracks/<track_id>")
 def get_track(track_id: str):
-    """Return a specific track, always checking UPLOAD_STATE first."""
-    # Always check UPLOAD_STATE first
-    if track_id in UPLOAD_STATE:
-        track_data = UPLOAD_STATE[track_id].copy()
-        track_data["track_id"] = track_id
-        return jsonify({"success": True, "data": track_data})
-    
-    # Fall back to placeholder data
-    track = next((item for item in PLACEHOLDER_TRACKS if item["id"] == track_id), None)
+    """Return a specific track."""
+    track = Track.query.get(track_id)
     if track is None:
         return jsonify({"success": False, "error": "Track not found"}), 404
-    return jsonify({"success": True, "data": track})
+    return jsonify({"success": True, "data": track.to_dict()})
 

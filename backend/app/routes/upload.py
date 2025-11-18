@@ -5,7 +5,8 @@ from uuid import uuid4
 
 from flask import Blueprint, jsonify, request
 
-from backend.app.state import UPLOAD_STATE
+from backend.app.extensions import db
+from backend.app.models import Track
 from backend.app.tasks.tasks import process_audio
 
 upload_bp = Blueprint("upload", __name__)
@@ -34,8 +35,15 @@ def upload_track():
     saved_file_path = track_dir / original_filename
     audio_file.save(str(saved_file_path))
 
-    # Update state
-    UPLOAD_STATE[track_id] = {"status": "processing"}
+    # Persist track metadata
+    track = Track(
+        id=track_id,
+        original_filename=original_filename,
+        stored_path=str(saved_file_path),
+        status="processing",
+    )
+    db.session.add(track)
+    db.session.commit()
 
     # Dispatch Celery task
     process_audio.delay(track_id, str(saved_file_path))

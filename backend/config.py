@@ -16,6 +16,15 @@ class BaseConfig:
     SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
     TESTING = False
     DEBUG = False
+    FLASK_ENV = os.getenv("FLASK_ENV", "development")
+
+    # Database configuration
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://brainjelly:brainjelly@localhost:5432/brainjelly_dev",
+    )
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Redis / Celery configuration
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

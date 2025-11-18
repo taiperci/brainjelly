@@ -16,6 +16,13 @@ def create_app(env_name: str | None = None) -> Flask:
     _register_extensions(app)
     _register_cli(app)
 
+    if app.config.get("FLASK_ENV") != "production":
+        from backend.app.extensions import db
+        from backend.app.models import Track  # noqa: F401
+
+        with app.app_context():
+            db.create_all()
+
     return app
 
 
@@ -49,9 +56,10 @@ def _register_error_handlers(app: Flask) -> None:
 
 def _register_extensions(app: Flask) -> None:
     """Initialize Flask extensions."""
+    from backend.app.extensions import db
     from backend.celery_app import create_celery_app
 
-    # Initialize Celery
+    db.init_app(app)
     create_celery_app(app)
 
 

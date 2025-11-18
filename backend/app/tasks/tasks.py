@@ -3,7 +3,8 @@
 import audioread
 from pathlib import Path
 
-from backend.app.state import UPLOAD_STATE
+from backend.app.extensions import db
+from backend.app.models import Track
 from backend.celery_app import celery
 
 try:
@@ -44,10 +45,7 @@ def process_audio(track_id: str, file_path: str) -> dict:
                     samplerate = audio.samplerate
                     duration = audio.duration
             except Exception as audioread_error:
-                error_state = {"status": "error", "message": str(audioread_error)}
-                UPLOAD_STATE[track_id] = error_state
-                print(f"Error processing audio for track {track_id}: {audioread_error}")
-                return error_state
+                return _handle_processing_error(track_id, audioread_error)
     else:
         # No soundfile available, use audioread
         try:
@@ -55,21 +53,61 @@ def process_audio(track_id: str, file_path: str) -> dict:
                 samplerate = audio.samplerate
                 duration = audio.duration
         except Exception as e:
-            error_state = {"status": "error", "message": str(e)}
-            UPLOAD_STATE[track_id] = error_state
-            print(f"Error processing audio for track {track_id}: {e}")
-            return error_state
+            return _handle_processing_error(track_id, e)
     
     # Success - update state
     print(f"Loaded file: {file_path}, samplerate={samplerate}, duration={duration:.2f}")
     
-    state_data = {
-        "status": "loaded",
-        "file_path": file_path,
-        "duration": duration,
-        "samplerate": samplerate
-    }
-    UPLOAD_STATE[track_id] = state_data
-    
-    return state_data
+    return _update_track_record(
+        track_id,
+        status="loaded",
+        samplerate=int(samplerate) if samplerate is not None else None,
+        duration=duration,
+        error_message=None,
+    )
+
+
+def _update_track_record(
+    track_id: str,
+    status: str,
+    samplerate: int | None,
+    duration: float | None,
+    error_message: str | None,
+) -> dict:
+    """Persist track metadata updates and return a response dict."""
+    track = Track.query.get(track_id)
+    if track is None:
+        return {
+            "track_id": track_id,
+            "status": status,
+            "samplerate": samplerate,
+            "duration": duration,
+            "error_message": error_message,
+        }
+
+    track.status = status
+    track.samplerate = samplerate
+    track.duration = duration
+    track.error_message = error_message
+
+    db.session.commit()
+
+    data = track.to_dict()
+    return data
+
+
+def _handle_processing_error(track_id: str, exc: Exception) -> dict:
+    """Handle processing failure by updating track status."""
+    print(f"Error processing audio for track {track_id}: {exc}")
+    try:
+        return _update_track_record(
+            track_id,
+            status="error",
+            samplerate=None,
+            duration=None,
+            error_message=str(exc),
+        )
+    except Exception:
+        # If track persistence also fails, still return minimal error info
+        return {"status": "error", "message": str(exc), "track_id": track_id}
 
