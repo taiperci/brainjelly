@@ -75,7 +75,8 @@ def process_audio(self, track_id: str, file_path: str) -> dict:
 
 def basic_extraction(track_path):
     """Extract basic audio features from a track file."""
-    waveform, samplerate = load_audio(track_path)
+    track_path_obj = Path(track_path)
+    waveform, samplerate = load_audio(track_path_obj)
 
     rms = float(np.sqrt(np.mean(waveform**2)))
     spectral_centroid = float(np.mean(np.abs(np.fft.rfft(waveform))))
@@ -93,17 +94,38 @@ def basic_extraction(track_path):
         "key_strength": None,
     }
 
-    current_app.logger.info(f"Essentia available: {ESSENTIA_AVAILABLE}")
+    is_wav = track_path_obj.suffix.lower() == ".wav"
+    current_app.logger.info("basic_extraction for %s", track_path_obj)
+    current_app.logger.info("Essentia available: %s", ESSENTIA_AVAILABLE)
+    current_app.logger.info("WAV file detected: %s", is_wav)
 
-    if ESSENTIA_AVAILABLE:
-        current_app.logger.info("Using Essentia extraction")
-        essentia_features = essentia_extraction(track_path) or {}
-        if essentia_features:
-            placeholder_features.update(
-                {key: value for key, value in essentia_features.items() if value is not None}
-            )
-        else:
-            current_app.logger.info("Essentia returned no features; using placeholders.")
+    if ESSENTIA_AVAILABLE and is_wav:
+        current_app.logger.info("Starting Essentia extraction for %s", track_path_obj)
+        try:
+            essentia_features = essentia_extraction(track_path_obj) or {}
+            if essentia_features:
+                placeholder_features.update(
+                    {
+                        key: value
+                        for key, value in essentia_features.items()
+                        if value is not None
+                    }
+                )
+                current_app.logger.info("Essentia extraction finished for %s", track_path_obj)
+            else:
+                current_app.logger.info(
+                    "Essentia returned no features; using placeholders for %s",
+                    track_path_obj,
+                )
+        except Exception as exc:  # noqa: broad-except
+            current_app.logger.exception("Essentia extraction failed: %s", exc)
+    elif ESSENTIA_AVAILABLE:
+        current_app.logger.info(
+            "Essentia available but %s is not WAV; skipping Essentia extraction",
+            track_path_obj,
+        )
+    else:
+        current_app.logger.info("Essentia unavailable; using placeholder extraction only.")
 
     return placeholder_features
 
