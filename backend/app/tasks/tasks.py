@@ -83,13 +83,7 @@ def basic_extraction(track_path):
 
     mfcc = [0.0] * 13  # placeholder
 
-    current_app.logger.info(f"Essentia available: {ESSENTIA_AVAILABLE}")
-
-    if ESSENTIA_AVAILABLE:
-        current_app.logger.info("Using Essentia for feature extraction")
-        return essentia_extraction(track_path)
-
-    return {
+    placeholder_features = {
         "spectral_centroid": spectral_centroid,
         "rms": rms,
         "peak_amplitude": peak_amplitude,
@@ -98,6 +92,20 @@ def basic_extraction(track_path):
         "key": None,
         "key_strength": None,
     }
+
+    current_app.logger.info(f"Essentia available: {ESSENTIA_AVAILABLE}")
+
+    if ESSENTIA_AVAILABLE:
+        current_app.logger.info("Using Essentia extraction")
+        essentia_features = essentia_extraction(track_path) or {}
+        if essentia_features:
+            placeholder_features.update(
+                {key: value for key, value in essentia_features.items() if value is not None}
+            )
+        else:
+            current_app.logger.info("Essentia returned no features; using placeholders.")
+
+    return placeholder_features
 
 
 @celery.task(bind=True)
