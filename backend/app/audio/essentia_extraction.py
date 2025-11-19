@@ -6,7 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+import numpy as np
+
 HAS_MAXPEAK = False
+HAS_MFCC = False
 
 try:
     import essentia  # noqa: F401
@@ -17,8 +20,16 @@ try:
         "RMS": hasattr(es, "RMS"),
         "SpectralCentroidTime": hasattr(es, "SpectralCentroidTime"),
         "Spectrum": hasattr(es, "Spectrum"),
+        "Windowing": hasattr(es, "Windowing"),
+        "MFCC": hasattr(es, "MFCC"),
     }
     HAS_MAXPEAK = hasattr(es, "MaxPeak")
+    HAS_MFCC = (
+        AVAILABLE["MonoLoader"]
+        and AVAILABLE["Windowing"]
+        and AVAILABLE["Spectrum"]
+        and AVAILABLE["MFCC"]
+    )
     ESSENTIA_AVAILABLE = (
         AVAILABLE["MonoLoader"]
         and AVAILABLE["RMS"]
@@ -27,6 +38,7 @@ try:
 except Exception:  # pragma: no cover - dependency not installed in CI
     ESSENTIA_AVAILABLE = False
     HAS_MAXPEAK = False
+    HAS_MFCC = False
     es = None
 
 
@@ -95,6 +107,37 @@ def essentia_extraction(track_path):
                 "peak_amplitude": peak_value,
             }
         )
+
+        if HAS_MFCC and audio.size > 0:
+            try:
+                logger.info("Starting Essentia MFCC extraction for %s", path)
+                frame_generator = es.FrameGenerator(
+                    audio, frameSize=2048, hopSize=1024, startFromZero=True
+                )
+                window = es.Windowing(type="hann")
+                spectrum = es.Spectrum()
+                mfcc_algo = es.MFCC(numberCoefficients=13)
+
+                mfcc_frames = []
+                for frame in frame_generator:
+                    windowed = window(frame)
+                    spec = spectrum(windowed)
+                    _, coeffs = mfcc_algo(spec)
+                    mfcc_frames.append(np.asarray(coeffs, dtype=np.float32))
+
+                if mfcc_frames:
+                    mean_mfcc = np.mean(mfcc_frames, axis=0)
+                    features["mfcc"] = [float(value) for value in mean_mfcc.tolist()]
+                    logger.info(
+                        "Essentia MFCC extraction completed with %d frames.", len(mfcc_frames)
+                    )
+                else:
+                    logger.warning(
+                        "Essentia MFCC extraction produced no frames; keeping placeholder."
+                    )
+            except Exception as exc:  # noqa: broad-except
+                logger.exception("Essentia MFCC extraction failed: %s", exc)
+
         return features
 
     except Exception as exc:  # noqa: broad-except
