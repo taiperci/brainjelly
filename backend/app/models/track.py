@@ -40,7 +40,7 @@ class Track(db.Model):
 
     def to_dict(self) -> dict:
         """Serialize the track for API responses."""
-        return {
+        data = {
             "track_id": self.id,
             "status": self.status,
             "original_filename": self.original_filename,
@@ -52,6 +52,12 @@ class Track(db.Model):
             "updated_at": self.updated_at.isoformat(),
             "has_similarity": bool(self.has_similarity),
         }
+        # Include features if available
+        if self.features:
+            data["features"] = self.features.to_dict()
+        else:
+            data["features"] = None
+        return data
 
     def __repr__(self) -> str:
         return f"<Track id={self.id} status={self.status}>"

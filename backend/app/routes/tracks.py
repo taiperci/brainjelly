@@ -45,7 +45,13 @@ def get_track_features(track_id: str):
         return jsonify({"success": False, "error": "Track not found"}), 404
 
     if not track.features:
-        return jsonify({"success": False, "error": "No features available"}), 404
+        return jsonify(
+            {
+                "success": True,
+                "data": None,
+                "message": "Features not available yet",
+            }
+        ), 200
 
     return jsonify({"success": True, "data": track.features.to_dict()})
 
