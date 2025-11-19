@@ -10,6 +10,7 @@ import numpy as np
 
 HAS_MAXPEAK = False
 HAS_MFCC = False
+HAS_BPM = False
 
 try:
     import essentia  # noqa: F401
@@ -24,6 +25,7 @@ try:
         "MFCC": hasattr(es, "MFCC"),
     }
     HAS_MAXPEAK = hasattr(es, "MaxPeak")
+    HAS_BPM = hasattr(es, "RhythmExtractor2013")
     HAS_MFCC = (
         AVAILABLE["MonoLoader"]
         and AVAILABLE["Windowing"]
@@ -39,6 +41,7 @@ except Exception:  # pragma: no cover - dependency not installed in CI
     ESSENTIA_AVAILABLE = False
     HAS_MAXPEAK = False
     HAS_MFCC = False
+    HAS_BPM = False
     es = None
 
 
@@ -137,6 +140,18 @@ def essentia_extraction(track_path):
                     )
             except Exception as exc:  # noqa: broad-except
                 logger.exception("Essentia MFCC extraction failed: %s", exc)
+
+        if HAS_BPM:
+            try:
+                logger.info("Starting Essentia BPM extraction for %s", path)
+                rhythm_extractor = es.RhythmExtractor2013(method="multifeature")
+                bpm_value, _, _, _, _ = rhythm_extractor(audio)
+                features["bpm"] = float(bpm_value)
+                logger.info("Essentia BPM extraction finished for %s", path)
+            except Exception as exc:  # noqa: broad-except
+                logger.exception("Essentia BPM extraction failed: %s", exc)
+        else:
+            logger.info("Essentia BPM extractor unavailable; keeping placeholder.")
 
         return features
 
