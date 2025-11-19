@@ -92,6 +92,10 @@ def basic_extraction(track_path):
         "bpm": None,
         "key": None,
         "key_strength": None,
+        "rms_envelope": [],
+        "spectral_flux": None,
+        "rolloff": None,
+        "flatness": None,
     }
 
     is_wav = track_path_obj.suffix.lower() == ".wav"
@@ -150,16 +154,21 @@ def extract_features(self, track_id, track_path):
                 session.commit()
                 return {"error": str(exc)}
 
-            audio_feature = AudioFeature(
-                track_id=track_id,
-                rms=features["rms"],
-                spectral_centroid=features["spectral_centroid"],
-                peak_amplitude=features["peak_amplitude"],
-                mfcc=features["mfcc"],
-                bpm=features["bpm"],
-                key=features["key"],
-                key_strength=features["key_strength"],
-            )
+            feature_kwargs = {
+                "track_id": track_id,
+                "spectral_centroid": features.get("spectral_centroid"),
+                "rms": features.get("rms"),
+                "peak_amplitude": features.get("peak_amplitude"),
+                "mfcc": features.get("mfcc"),
+                "bpm": features.get("bpm"),
+                "key": features.get("key"),
+                "key_strength": features.get("key_strength"),
+                "rms_envelope": features.get("rms_envelope"),
+                "spectral_flux": features.get("spectral_flux"),
+                "rolloff": features.get("rolloff"),
+                "flatness": features.get("flatness"),
+            }
+            audio_feature = AudioFeature(**feature_kwargs)
             session.add(audio_feature)
 
             track.status = "features_ready"
@@ -171,6 +180,13 @@ def extract_features(self, track_id, track_path):
                 "rms": audio_feature.rms,
                 "peak_amplitude": audio_feature.peak_amplitude,
                 "mfcc": audio_feature.mfcc,
+                "bpm": audio_feature.bpm,
+                "key": audio_feature.key,
+                "key_strength": audio_feature.key_strength,
+                "rms_envelope": audio_feature.rms_envelope,
+                "spectral_flux": audio_feature.spectral_flux,
+                "rolloff": audio_feature.rolloff,
+                "flatness": audio_feature.flatness,
             }
 
             session.commit()
