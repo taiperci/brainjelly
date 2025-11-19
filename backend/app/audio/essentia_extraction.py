@@ -1,6 +1,11 @@
 """Essentia-based audio feature extraction."""
 
-ESSENTIA_AVAILABLE = False
+try:
+    from essentia.standard import MusicExtractor  # noqa: F401
+
+    ESSENTIA_AVAILABLE = True
+except ImportError:
+    ESSENTIA_AVAILABLE = False
 
 
 def essentia_extraction(track_path):

@@ -83,7 +83,10 @@ def basic_extraction(track_path):
 
     mfcc = [0.0] * 13  # placeholder
 
+    current_app.logger.info(f"Essentia available: {ESSENTIA_AVAILABLE}")
+
     if ESSENTIA_AVAILABLE:
+        current_app.logger.info("Using Essentia for feature extraction")
         return essentia_extraction(track_path)
 
     return {
