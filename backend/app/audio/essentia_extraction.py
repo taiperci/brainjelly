@@ -11,6 +11,7 @@ import numpy as np
 HAS_MAXPEAK = False
 HAS_MFCC = False
 HAS_BPM = False
+HAS_KEY = False
 
 try:
     import essentia  # noqa: F401
@@ -43,6 +44,14 @@ except Exception:  # pragma: no cover - dependency not installed in CI
     HAS_MFCC = False
     HAS_BPM = False
     es = None
+
+try:
+    from essentia.standard import KeyExtractor
+
+    HAS_KEY = True
+except ImportError:
+    HAS_KEY = False
+    KeyExtractor = None
 
 
 logger = logging.getLogger(__name__)
@@ -152,6 +161,34 @@ def essentia_extraction(track_path):
                 logger.exception("Essentia BPM extraction failed: %s", exc)
         else:
             logger.info("Essentia BPM extractor unavailable; keeping placeholder.")
+
+        if ESSENTIA_AVAILABLE and HAS_KEY and path.suffix.lower() == ".wav":
+            try:
+                logger.info("Starting key extraction for %s", path)
+                key_extractor = KeyExtractor()
+                key_value, scale, strength = key_extractor(audio)
+                logger.info(
+                    "Key extractor raw output for %s: key=%s scale=%s strength=%s",
+                    path,
+                    key_value,
+                    scale,
+                    strength,
+                )
+                formatted_key = (
+                    f"{key_value}" if scale.lower() == "major" else f"{key_value}m"
+                )
+                features["key"] = formatted_key
+                features["key_strength"] = float(strength)
+                logger.info("Key extraction finished for %s", path)
+            except Exception as exc:  # noqa: broad-except
+                logger.exception("Essentia key extraction failed: %s", exc)
+        else:
+            logger.info(
+                "Essentia key extraction unavailable (available=%s, has_key=%s, wav=%s); keeping placeholder.",
+                ESSENTIA_AVAILABLE,
+                HAS_KEY,
+                path.suffix.lower() == ".wav",
+            )
 
         return features
 
