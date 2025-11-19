@@ -12,6 +12,8 @@ HAS_MAXPEAK = False
 HAS_MFCC = False
 HAS_BPM = False
 HAS_KEY = False
+HAS_FRAME_GENERATOR = False
+HAS_SPECTRAL_SHAPE = False
 
 try:
     import essentia  # noqa: F401
@@ -24,9 +26,22 @@ try:
         "Spectrum": hasattr(es, "Spectrum"),
         "Windowing": hasattr(es, "Windowing"),
         "MFCC": hasattr(es, "MFCC"),
+        "FrameGenerator": hasattr(es, "FrameGenerator"),
+        "SpectralFlux": hasattr(es, "SpectralFlux"),
+        "RollOff": hasattr(es, "RollOff"),
+        "SpectralFlatness": hasattr(es, "SpectralFlatness"),
     }
     HAS_MAXPEAK = hasattr(es, "MaxPeak")
     HAS_BPM = hasattr(es, "RhythmExtractor2013")
+    HAS_FRAME_GENERATOR = AVAILABLE["FrameGenerator"]
+    HAS_SPECTRAL_SHAPE = (
+        AVAILABLE["Windowing"]
+        and AVAILABLE["Spectrum"]
+        and AVAILABLE["SpectralFlux"]
+        and AVAILABLE["RollOff"]
+        and AVAILABLE["SpectralFlatness"]
+        and AVAILABLE["FrameGenerator"]
+    )
     HAS_MFCC = (
         AVAILABLE["MonoLoader"]
         and AVAILABLE["Windowing"]
@@ -43,6 +58,8 @@ except Exception:  # pragma: no cover - dependency not installed in CI
     HAS_MAXPEAK = False
     HAS_MFCC = False
     HAS_BPM = False
+    HAS_FRAME_GENERATOR = False
+    HAS_SPECTRAL_SHAPE = False
     es = None
 
 try:
@@ -66,6 +83,10 @@ def _placeholder_features() -> Dict[str, Any]:
         "bpm": None,
         "key": None,
         "key_strength": None,
+        "rms_envelope": [],
+        "spectral_flux": None,
+        "rolloff": None,
+        "flatness": None,
     }
 
 
@@ -119,6 +140,82 @@ def essentia_extraction(track_path):
                 "peak_amplitude": peak_value,
             }
         )
+
+        if HAS_FRAME_GENERATOR and audio.size > 0:
+            try:
+                logger.info("Starting RMS envelope extraction for %s", path)
+                frame_generator = es.FrameGenerator(
+                    audio, frameSize=1024, hopSize=512, startFromZero=True
+                )
+                envelope_rms = es.RMS()
+                envelope_values = [float(envelope_rms(frame)) for frame in frame_generator]
+
+                if envelope_values:
+                    features["rms_envelope"] = envelope_values
+                    logger.info(
+                        "RMS envelope extraction finished for %s (%d frames).",
+                        path,
+                        len(envelope_values),
+                    )
+                else:
+                    logger.warning(
+                        "RMS envelope extraction produced no frames for %s; keeping placeholder.",
+                        path,
+                    )
+            except Exception as exc:  # noqa: broad-except
+                logger.exception("RMS envelope extraction failed for %s: %s", path, exc)
+        else:
+            logger.info(
+                "RMS envelope extraction unavailable (frame_generator=%s, audio_size=%s); keeping placeholder.",
+                HAS_FRAME_GENERATOR,
+                audio.size,
+            )
+
+        if HAS_SPECTRAL_SHAPE and audio.size > 0:
+            try:
+                logger.info("Starting spectral shape extraction for %s", path)
+                frame_generator = es.FrameGenerator(
+                    audio, frameSize=2048, hopSize=1024, startFromZero=True
+                )
+                window = es.Windowing(type="hann")
+                spectrum = es.Spectrum()
+                flux_algo = es.SpectralFlux()
+                rolloff_algo = es.RollOff()
+                flatness_algo = es.SpectralFlatness()
+
+                flux_values = []
+                rolloff_values = []
+                flatness_values = []
+
+                for frame in frame_generator:
+                    windowed = window(frame)
+                    spec = spectrum(windowed)
+                    flux_values.append(float(flux_algo(spec)))
+                    rolloff_values.append(float(rolloff_algo(spec)))
+                    flatness_values.append(float(flatness_algo(spec)))
+
+                if flux_values:
+                    features["spectral_flux"] = float(np.mean(flux_values))
+                    features["rolloff"] = float(np.mean(rolloff_values))
+                    features["flatness"] = float(np.mean(flatness_values))
+                    logger.info(
+                        "Spectral shape extraction finished for %s (%d frames).",
+                        path,
+                        len(flux_values),
+                    )
+                else:
+                    logger.warning(
+                        "Spectral shape extraction produced no frames for %s; keeping placeholders.",
+                        path,
+                    )
+            except Exception as exc:  # noqa: broad-except
+                logger.exception("Spectral shape extraction failed for %s: %s", path, exc)
+        else:
+            logger.info(
+                "Spectral shape extraction unavailable (has_shape=%s, audio_size=%s); keeping placeholders.",
+                HAS_SPECTRAL_SHAPE,
+                audio.size,
+            )
 
         if HAS_MFCC and audio.size > 0:
             try:
