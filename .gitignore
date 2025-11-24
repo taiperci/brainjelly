@@ -40,3 +40,4 @@ celerybeat.pid
 # Uploads
 backend/uploads/*
 
+*.wav
